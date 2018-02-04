@@ -1,6 +1,52 @@
 var ts = { };
 ts.log = function() {}
-// debugStuff();
+debugStuff();
+
+class SchemaManager {
+  constructor(schemaDir, readFile, watchFile) {
+    this.schemaDir = schemaDir;
+    this._readFile = readFile;
+    this._watchFile = watchFile;
+    this.refresh();
+  }
+  refresh() {
+    const schemaFile = this.readFile(this.schemaDir + 'schema.json');
+    this.schemas = JSON.parse(schemaFile);
+  }
+  fileExists(filename) {
+    const localFilename = filename.substr(this.schemaDir.length);
+    ts.log(`Manager checking if ${localFilename} exists`);
+    return localFilename === 'schema.json' || localFilename === 'index.ts';
+  }
+  readFile(filename, encoding) {
+    const localFilename = filename.substr(this.schemaDir.length);
+    ts.log(`Manager reading ${localFilename}`);
+    if (localFilename === 'index.ts') {
+      const fileData = [];
+      for (const schema of this.schemas) {
+        fileData.push(`export interface ${schema.name} {`);
+        for (const prop of schema.props) {
+          if (prop.type === 'array') {
+            fileData.push(`  ${prop.name}: Array<${prop.itemType}>;`);
+          } else {
+            fileData.push(`  ${prop.name}: ${prop.type}`);
+          }
+        }
+        fileData.push(`}`);
+      }
+      return fileData.join('\n');
+    }
+    return this._readFile(filename, encoding);
+  }
+
+  watchFile(filename, callback) {
+    ts.log('Manager watching file', filename);
+    return this._watchFile(this.schemaDir + 'schema.json', (_, event) => {
+      this.refresh();
+      return callback(filename, event);
+    });
+  }
+}
 
 _decorate(ts, 'sys', function(sys) {
   // TODO: this is a bigger hack than most of the rest of the project
@@ -9,39 +55,12 @@ _decorate(ts, 'sys', function(sys) {
   const betterFileName = ts.normalizeSlashes(__filename);
   const rootDir = betterFileName.substr(0, betterFileName.indexOf('/node_modules'));
 
-  // Namespace all the fake code inside of a directory called "fake-module"
-  function toFakeModuleName(filename) {
-    ts.log('toFakeModuleName', filename);
-    const cd = ts.normalizeSlashes(rootDir);
-    const fakeModulePath = cd + '/test/fake-module';
-    if (!filename.startsWith(fakeModulePath)) {
-      return null;
-    }
-    return "/" + filename.substr(fakeModulePath.length + 1);
-  }
-
-  const oldDirectoryExists = sys.directoryExists;
-  let directoryPatched = true;
-  sys.directoryExists = function (filename) {
-    ts.log('directoryExists', filename);
-    if (!directoryPatched) {
-      return oldDirectoryExists(filename);
-    }
-    const name = toFakeModuleName(filename);
-    if (name === "/") {
-      // The "root directory" of the fake module exists
-      return true;
-    }
-    return oldDirectoryExists(filename);
-  };
-
   const oldFileExists = sys.fileExists;
   sys.fileExists = function (filename) {
     ts.log('fileExists', filename);
-    const name = toFakeModuleName(filename);
-    if (name === "/generation-test.ts") {
-      // The "generated" file in the fake module exists
-      return true;
+    const manager = getSchemaManager(filename);
+    if (manager) {
+      return manager.fileExists(filename);
     }
     return oldFileExists(filename);
   };
@@ -49,43 +68,40 @@ _decorate(ts, 'sys', function(sys) {
   const oldReadFile = sys.readFile;
   sys.readFile = function (filename, encoding) {
     ts.log('readFile', filename, encoding);
-    const name = toFakeModuleName(filename);
-    if (name === "/generation-test.ts") {
-      const moduleBody = `
-        export default function() { console.log('GENERATED CODE!!!'); }
-        export interface Person {
-          name: string;
-          age: number;
-          birthday: Date;
-        }
-      `;
-      return moduleBody;
-    };
+    const manager = getSchemaManager(filename);
+    if (manager) {
+      return manager.readFile(filename);
+    }
     return oldReadFile(filename, encoding);
   };
 
-  const oldWriteFile = sys.writeFile;
-  sys.writeFile = function(path, data, writeBom) {
-    ts.log('writeFile', path, data, writeBom);
-    // Turn off a monkeypatch when writing data,
-    // so that sys can recursively mkdir for us
-    try {
-      directoryPatched = false;
-      return oldWriteFile(path, data, writeBom);
-    } finally {
-      directoryPatched = true;
+  // have to _decorate watchFile because tsserver.js reassigns it later
+  let oldWatchFile = sys.watchFile;
+  _decorate(sys, 'watchFile', function(owf) {
+    oldWatchFile = owf;
+    return function(filename, callback) {
+      ts.log('watchFile', filename);
+      const manager = getSchemaManager(filename);
+      if (manager) {
+        return manager.watchFile(filename, callback);
+      }
+      return owf(filename, callback);
+    };
+  });
+
+  const schemaManagers = {};
+  function getSchemaManager(path) {
+    const schemaIndex = path.indexOf('@@schemas');
+    if (schemaIndex === -1) {
+      return null;
     }
+    const schemaDir = path.substr(0, schemaIndex) + '@@schemas/';
+    if (!schemaManagers[schemaDir]) {
+      schemaManagers[schemaDir] = new SchemaManager(schemaDir, oldReadFile, oldWatchFile);
+    }
+    return schemaManagers[schemaDir];
   }
-  
-  // Have to turn off file watching in generated code for now
-  // because an eager beaver in tsserver.js is calling fs.stat directly
-  // TODO: this would be a good place to "watch" generated files
-  _wrap(sys, 'watchFile', function (oldWatchFile, filename, callback) {
-    if (filename.indexOf('fake-module') > -1) {
-      return { close: function() { } }
-    }
-    oldWatchFile(filename, callback);
-  })
+
   return sys;
 });
 

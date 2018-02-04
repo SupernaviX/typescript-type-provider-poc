@@ -1,11 +1,13 @@
 import * as ts from 'typescript';
 import local from './local';
-import { Person } from './fake-module/generation-test';
+import { Person } from './@@schemas';
 
 const someGuy: Person = {
   name: 'Fred',
   age: 31337,
-  birthday: new Date(1963, 11, 23)
+  addresses: [
+    { line1: 'my', line2: 'ass' }
+  ]
 };
 
 console.log('Typescript code!');

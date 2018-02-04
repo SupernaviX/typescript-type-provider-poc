@@ -1,0 +1,17 @@
+[
+  {
+    "name": "Person",
+    "props": [
+      { "name": "name", "type": "string" },
+      { "name": "age", "type": "number" },
+      { "name": "addresses", "type": "array", "itemType": "Address" }
+    ]
+  },
+  {
+    "name": "Address",
+    "props": [
+      { "name": "line1", "type": "string" },
+      { "name": "line2", "type": "string" }
+    ]
+  }
+]
