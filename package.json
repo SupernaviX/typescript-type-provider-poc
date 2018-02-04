@@ -1,0 +1,14 @@
+{
+  "name": "tsc-experiment",
+  "version": "0.0.0",
+  "description": "See if we can't slide our way into there",
+  "main": "index.js",
+  "scripts": {
+    "build": "node ./src/index.js",
+    "postinstall": "npm run build",
+    "test": "./node_modules/.bin/tsc -p ."
+  },
+  "dependencies": {
+    "typescript": "^2.7.1"
+  }
+}

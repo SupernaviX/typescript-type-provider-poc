@@ -1,0 +1,8 @@
+node_modules
+dist
+test/*.js
+test/*.map
+.vscode/*.*
+injected-logs.txt
+server-logs.txt
+ti-*.log
