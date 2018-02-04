@@ -1,97 +1,125 @@
-// const ts = require('typescript');
-// const oldCreateCompilerHost = ts.createCompilerHost;
-// const oldWatchCompilerHost = ts.createWatchCompilerHost;
+var ts = { };
+ts.log = function() {}
 
-var ts = {};
-_decorate(ts, 'createCompilerHost', function(oldCreateCompilerHost) {
-  return function(...args) {
-    const host = oldCreateCompilerHost(...args);
-    const currentDirectory = host.getCurrentDirectory();
-    for (var prop in host) {
-      // __trace(host, prop);
+function debugStuff() {
+  ts.log = function(...args) {
+    console.log(...args);
+  }
+}
+
+_decorate(ts, 'sys', function(sys) {
+  // TODO: this is a bigger hack than most of the rest of the project
+  // Find the project's root directory by looking for the first folder with node_modules
+  // Need to find a project-aware injection target
+  const betterFileName = ts.normalizeSlashes(__filename);
+  const rootDir = betterFileName.substr(0, betterFileName.indexOf('/node_modules'));
+
+  // Namespace all the fake code inside of a directory called "fake-module"
+  function toFakeModuleName(filename) {
+    ts.log('toFakeModuleName', filename);
+    const cd = ts.normalizeSlashes(rootDir);
+    const fakeModulePath = cd + '/test/fake-module';
+    if (!filename.startsWith(fakeModulePath)) {
+      return null;
     }
-    function toFakeModuleName(filename) {
-      const cd = ts.normalizeSlashes(host.getCurrentDirectory());
-      const fakeModulePath = cd + "/test/fake-module";
-      if (!filename.startsWith(fakeModulePath)) {
-        return null;
-      }
-      return "/" + filename.substr(fakeModulePath.length + 1);
-    }
-    const oldDirectoryExists = host.directoryExists;
-    host.directoryExists = function (filename) {
-      const name = toFakeModuleName(filename);
-      if (name === "/") {
-        return true;
-      }
+    return "/" + filename.substr(fakeModulePath.length + 1);
+  }
+
+  const oldDirectoryExists = sys.directoryExists;
+  let directoryPatched = true;
+  sys.directoryExists = function (filename) {
+    ts.log('directoryExists', filename);
+    if (!directoryPatched) {
       return oldDirectoryExists(filename);
     }
-    const oldFileExists = host.fileExists;
-    host.fileExists = function(filename) {
-      const name = toFakeModuleName(filename);
-      if (name === "/generation-test.ts") {
-        return true;
-      }
-      return oldFileExists(filename);
-    };
-    const oldGetSourceFile = host.getSourceFile;
-    host.getSourceFile = function(fileName, languageVersion, onError) {
-      const name = toFakeModuleName(fileName);
-      if (name === "/generation-test.ts") {
-        const moduleBody = `
-          export default function() { console.log('GENERATED CODE!!!'); }
-          export interface Person {
-            name: string;
-            age: number;
-            birthday: Date;
-          }
-        `;
-        return ts.createSourceFile(fileName, moduleBody, languageVersion, args[1]);
-      }
-      return oldGetSourceFile(fileName, languageVersion, onError);
-    };
-    /*
-    const moduleResolutionCache = ts.createModuleResolutionCache(currentDirectory, x => host.getCanonicalFileName(x));
-    host.resolveModuleNames = function(moduleNames, containingFile) {
-      const names = moduleNames.map(name => {
-        if (name === '@@fake-module/generation-test') {
-          return {
-            resolvedFileName: ts.normalizeSlashes(currentDirectory) + "/generation-test.ts",
-            originalPath: undefined,
-            extension: '.ts',
-            isExternalLibraryImport: false,
-            packageId: undefined
-          };
-        }
-        return ts.resolveModuleName(name, containingFile, args[0], host, moduleResolutionCache).resolvedModule;
-      });
-      console.log(names);
-      return names;
+    const name = toFakeModuleName(filename);
+    if (name === "/") {
+      // The "root directory" of the fake module exists
+      return true;
     }
-    */
-    return host;
+    return oldDirectoryExists(filename);
   };
+
+  const oldFileExists = sys.fileExists;
+  sys.fileExists = function (filename) {
+    ts.log('fileExists', filename);
+    const name = toFakeModuleName(filename);
+    if (name === "/generation-test.ts") {
+      // The "generated" file in the fake module exists
+      return true;
+    }
+    return oldFileExists(filename);
+  };
+
+  const oldReadFile = sys.readFile;
+  sys.readFile = function (filename, encoding) {
+    ts.log('readFile', filename, encoding);
+    const name = toFakeModuleName(filename);
+    if (name === "/generation-test.ts") {
+      const moduleBody = `
+        export default function() { console.log('GENERATED CODE!!!'); }
+        export interface Person {
+          name: string;
+          age: number;
+          birthday: Date;
+        }
+      `;
+      return moduleBody;
+    };
+    return oldReadFile(filename, encoding);
+  };
+
+  const oldWriteFile = sys.writeFile;
+  sys.writeFile = function(path, data, writeBom) {
+    ts.log('writeFile', path, data, writeBom);
+    // Turn off a monkeypatch when writing data,
+    // so that sys can recursively mkdir for us
+    try {
+      directoryPatched = false;
+      return oldWriteFile(path, data, writeBom);
+    } finally {
+      directoryPatched = true;
+    }
+  }
+  
+  // Have to turn off file watching in generated code for now
+  // because an eager beaver in tsserver.js is calling fs.stat directly
+  // TODO: this would be a good place to "watch" generated files
+  _wrap(sys, 'watchFile', function (oldWatchFile, filename, callback) {
+    if (filename.indexOf('fake-module') > -1) {
+      return { close: function() { } }
+    }
+    oldWatchFile(filename, callback);
+  })
+  return sys;
 });
 
-function _decorate(obj, method, func) {
-  Object.defineProperty(obj, method, {
+function _decorate(obj, prop, func) {
+  ts.log('DECORATING ' + prop);
+  var existingValue = undefined;
+  // If this code runs before the thing it modifies is defined,
+  // abuse setters to do the modification later
+  Object.defineProperty(obj, prop, {
+    enumerable: true,
     configurable: true,
-    set: (realValue) => {
-      Object.defineProperty(obj, method, {
-        value: func(realValue)
-      }); 
+    get: function() { return existingValue; },
+    set: function(newValue) {
+      if (!existingValue) {
+        existingValue = func(newValue);
+        ts.log('LAZILY DECORATED ' + prop);
+      }
+      return existingValue;
     }
   })
 }
 
-function _trace(obj, method) {
-  const oldMethod = obj[method];
-  if (typeof oldMethod !== 'function') {
-    return;
-  }
-  console.log(`MONKEYPATCHING ${method}...`)
-  obj[method] = function(...args) {
-    console.log(`MONKEYPATCHED CALL TO ${method}!!!`, args);
-    return oldMethod.apply(obj, args);
-  }
+function _wrap(obj, prop, takesOldThenArgs) {
+  ts.log('WRAPPING ' + prop);
+  return _decorate(obj, prop, function(old) {
+    ts.log('WRAPPED ' + prop);
+    return function(...args) {
+      ts.log('CALLING WRAPPED ' + prop);
+      return takesOldThenArgs(old, ...args);
+    }
+  });
 }
