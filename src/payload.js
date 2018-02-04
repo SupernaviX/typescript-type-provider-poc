@@ -1,6 +1,6 @@
 var ts = { };
 ts.log = function() {}
-debugStuff();
+// debugStuff();
 
 class SchemaManager {
   constructor(schemaDir, readFile, watchFile) {
@@ -22,19 +22,7 @@ class SchemaManager {
     const localFilename = filename.substr(this.schemaDir.length);
     ts.log(`Manager reading ${localFilename}`);
     if (localFilename === 'index.ts') {
-      const fileData = [];
-      for (const schema of this.schemas) {
-        fileData.push(`export interface ${schema.name} {`);
-        for (const prop of schema.props) {
-          if (prop.type === 'array') {
-            fileData.push(`  ${prop.name}: Array<${prop.itemType}>;`);
-          } else {
-            fileData.push(`  ${prop.name}: ${prop.type}`);
-          }
-        }
-        fileData.push(`}`);
-      }
-      return fileData.join('\n');
+      return this._generateFile();
     }
     return this._readFile(filename, encoding);
   }
@@ -45,6 +33,41 @@ class SchemaManager {
       this.refresh();
       return callback(filename, event);
     });
+  }
+
+  _generateFile() {
+    function typeofChecker(primitive) {
+      return `function check${primitive}(input: any): input is ${primitive} { return typeof input === '${primitive}'; }`
+    }
+    const fileData = [
+      typeofChecker('string'),
+      typeofChecker('number'),
+      typeofChecker('boolean'),
+    ];
+    for (const schema of this.schemas) {
+      fileData.push(`export interface ${schema.name} {`);
+      for (const prop of schema.props) {
+        if (prop.type === 'array') {
+          fileData.push(`  ${prop.name}: Array<${prop.itemType}>;`);
+        } else {
+          fileData.push(`  ${prop.name}: ${prop.type}`);
+        }
+      }
+      fileData.push(`}`);
+      fileData.push(`export function check${schema.name}(input: any): input is ${schema.name} {`);
+      fileData.push(`  if (!input) { return false; }`);
+      for (const prop of schema.props) {
+        if (prop.type === 'array') {
+          fileData.push(`  if (!Array.isArray(input.${prop.name})) { return false; }`);
+          fileData.push(`  if (!input.${prop.name}.every(check${prop.itemType})) { return false; }`);
+        } else {
+          fileData.push(`  if (!check${prop.type}(input.${prop.name})) { return false; }`);
+        }
+      }
+      fileData.push(`  return true;`);
+      fileData.push('}');
+    }
+    return fileData.join('\n');
   }
 }
 
