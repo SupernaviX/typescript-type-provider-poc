@@ -1,19 +1,8 @@
 var ts = { };
 ts.log = function() {}
-
-function debugStuff() {
-  process.env.TSS_LOG = "-level verbose -traceToConsole true -file \"C:/Codez/tsc-experiment/server-logs.txt\"";
-  const fs = require('fs');
-  const file = "C:/Codez/tsc-experiment/injected-logs.txt";    
-  const fd = fs.openSync(file, "a+");
-  ts.log = function(...args) {
-    const buf = new Buffer("" + new Date().getTime() + ": " + args.join(' ') + '\n');
-    fs.writeSync(fd, buf, 0, buf.length, null);
-  }
-}
+// debugStuff();
 
 _decorate(ts, 'sys', function(sys) {
-
   // TODO: this is a bigger hack than most of the rest of the project
   // Find the project's root directory by looking for the first folder with node_modules
   // Need to find a project-aware injection target
@@ -24,7 +13,7 @@ _decorate(ts, 'sys', function(sys) {
   function toFakeModuleName(filename) {
     ts.log('toFakeModuleName', filename);
     const cd = ts.normalizeSlashes(rootDir);
-    const fakeModulePath = cd + "/test/fake-module";
+    const fakeModulePath = cd + '/test/fake-module';
     if (!filename.startsWith(fakeModulePath)) {
       return null;
     }
@@ -32,8 +21,12 @@ _decorate(ts, 'sys', function(sys) {
   }
 
   const oldDirectoryExists = sys.directoryExists;
+  let directoryPatched = true;
   sys.directoryExists = function (filename) {
     ts.log('directoryExists', filename);
+    if (!directoryPatched) {
+      return oldDirectoryExists(filename);
+    }
     const name = toFakeModuleName(filename);
     if (name === "/") {
       // The "root directory" of the fake module exists
@@ -71,6 +64,18 @@ _decorate(ts, 'sys', function(sys) {
     return oldReadFile(filename, encoding);
   };
 
+  const oldWriteFile = sys.writeFile;
+  sys.writeFile = function(path, data, writeBom) {
+    ts.log('writeFile', path, data, writeBom);
+    // Turn off a monkeypatch when writing data,
+    // so that sys can recursively mkdir for us
+    try {
+      directoryPatched = false;
+      return oldWriteFile(path, data, writeBom);
+    } finally {
+      directoryPatched = true;
+    }
+  }
   
   // Have to turn off file watching in generated code for now
   // because an eager beaver in tsserver.js is calling fs.stat directly
