@@ -2,9 +2,12 @@
   {
     "name": "Person",
     "props": [
-      { "name": "name", "type": "string" },
-      { "name": "age", "type": "number" },
-      { "name": "addresses", "type": "array", "itemType": "Address" }
+      { "name": "fullName", "type": "string" },
+      {
+        "name": "addresses",
+        "type": "array",
+        "itemType": "Address"
+      }
     ]
   },
   {

@@ -7,13 +7,11 @@ backup('node_modules/typescript/lib/tsserver.js');
 backup('node_modules/typescript/lib/tsc.js');
 
 generate('node_modules/typescript/lib/tsserver.js', [
-  'src/debug-tsserver.js',
   'src/payload.js',
   'node_modules/typescript/lib/tsserver.orig.js'
 ]);
 
 generate('node_modules/typescript/lib/tsc.js', [
-  'src/debug-tsc.js',
   'src/payload.js',
   'node_modules/typescript/lib/tsc.orig.js'
 ]);

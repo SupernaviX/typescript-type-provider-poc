@@ -1,17 +1,15 @@
-import * as ts from 'typescript';
-import local from './local';
-import { Person, checkPerson } from './@@schemas';
+import * as schemas from './@@schemas';
 
-const someGuy: Person = {
-  name: 'Fred',
-  age: 31337,
+const doc: schemas.Person = {
+  fullName: "John Smith",
   addresses: [
-    { line1: 'my', line2: 'ass' }
+    {
+      line1: "238 Earl's Court Road",
+      line2: "London, UK"
+    }
   ]
 };
-if (checkPerson(someGuy)) {
-  console.log('Yep!');
-}
 
-console.log('Typescript code!');
-local();
+if (schemas.isPerson(doc)) {
+  console.log('yay');
+}

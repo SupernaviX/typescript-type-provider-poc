@@ -1,7 +1,7 @@
 {
-  "name": "tsc-experiment",
+  "name": "typescript-type-provider-poc",
   "version": "0.0.0",
-  "description": "See if we can't slide our way into there",
+  "description": "A hacky proof-of-concept for type providers in typescript",
   "main": "index.js",
   "scripts": {
     "build": "node ./src/index.js",
